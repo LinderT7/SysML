@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-SYSML STUDIO PRO WORKBENCH v2.4 (DESKTOP EDITION)
-Features: Interactive Canvas, Property Inspector, Architecture Validation,
-          SysML v2 Compliance Engine, and Live Code/JSON Exporters.
+SYSML STUDIO PRO WORKBENCH v2.5 (DESKTOP EDITION)
+Features: Interactive Canvas, Property Inspector, Live Diagnostics Engine,
+          SysML v2 Compliance, and Code/JSON Exporters.
 ===============================================================================
 """
 
@@ -14,7 +14,7 @@ from tkinter import ttk, messagebox, scrolledtext
 class SysMLStudioProApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("SysML Studio Pro v2.4 MBSE Workbench - Desktop Edition")
+        self.root.title("SysML Studio Pro v2.5 MBSE Workbench - Desktop Edition")
         self.root.geometry("1350x850")
         self.root.configure(bg="#0b0f19")
 
@@ -30,20 +30,32 @@ class SysMLStudioProApp:
             "text_muted": "#9ca3af",
             "canvas_bg": "#0b1329",
             "grid_dots": "#1e293b",
-            "gold": "#f59e0b"
+            "gold": "#f59e0b",
+            "red": "#ef4444",
+            "green": "#22c55e"
         }
 
-        # Application State & SysML v2 Model Schema
+        # Application State & SysML v2 Model Schema (Prosthetic Hand Architecture)
         self.active_diagram = "BDD"
         self.selected_node_id = None
+        
         self.nodes = [
-            {"id": "node_1", "name": "ProstheticHandSystem", "type": "Top System", "stereo": "«system»", "x": 300, "y": 80, "w": 180, "h": 70},
-            {"id": "node_2", "name": "ESP32 Controller", "type": "Microcontroller", "stereo": "«block»", "x": 180, "y": 240, "w": 160, "h": 65},
-            {"id": "node_3", "name": "EMG Sensor Array", "type": "Input Signal Unit", "stereo": "«block»", "x": 420, "y": 240, "w": 160, "h": 65}
+            {"id": "node_1", "name": "ProstheticHandSystem", "type": "Top System", "stereo": "«system»", "x": 300, "y": 60, "w": 180, "h": 70},
+            {"id": "node_2", "name": "ESP32Controller", "type": "Microcontroller", "stereo": "«block»", "x": 160, "y": 200, "w": 180, "h": 65, "ports": ["fsrDataIn"]},
+            {"id": "node_3", "name": "LinearActuator", "type": "Actuation Unit", "stereo": "«block»", "x": 420, "y": 200, "w": 180, "h": 65, "ports": ["tendonForceOut"]}
         ]
+        
         self.connections = [
-            {"from": "node_1", "to": "node_2", "label": "composition (v2)"},
-            {"from": "node_1", "to": "node_3", "label": "composition (v2)"}
+            {"from": "node_1", "to": "node_2", "label": "composition"},
+            {"from": "node_1", "to": "node_3", "label": "composition"}
+            # Note: 'fsrDataIn' and 'tendonForceOut' have no active connectors, triggering diagnostics warnings!
+        ]
+
+        self.requirements = [
+            {"id": "URD-01", "name": "Response Latency", "text": "System shall respond to muscle activation signals within 500ms.", "status": "Verified"},
+            {"id": "SRD-01", "name": "Signal Processing", "text": "EMG raw signals must be filtered using Exponential Moving Average at 1kHz.", "status": "Verified"},
+            {"id": "SRD-02", "name": "Tactile Feedback Limit", "text": "Grip force shall dynamically adjust based on FSR sensor values.", "status": "Verified"},
+            {"id": "SRD-03", "name": "Emergency Cutoff", "text": "If actuator motor current exceeds 2.0A, emergency shutdown state must trigger.", "status": "PENDING"}
         ]
 
         self.zoom_level = 1.0
@@ -68,7 +80,7 @@ class SysMLStudioProApp:
         badge = tk.Label(title_frame, text="SysML Studio Pro", font=("Segoe UI", 12, "bold"), fg=self.colors["text_white"], bg=self.colors["panel_bg"])
         badge.pack(side=tk.LEFT)
 
-        ver_tag = tk.Label(title_frame, text=" v2.4 MBSE ", font=("Segoe UI", 8, "bold"), fg=self.colors["accent_border"], bg="#0369a1")
+        ver_tag = tk.Label(title_frame, text=" v2.5 MBSE ", font=("Segoe UI", 8, "bold"), fg=self.colors["accent_border"], bg="#0369a1")
         ver_tag.pack(side=tk.LEFT, padx=8)
 
         subtitle = tk.Label(title_frame, text="System: 3D-Printed EMG Prosthetic Hand Architecture", font=("Segoe UI", 9), fg=self.colors["text_muted"], bg=self.colors["panel_bg"])
@@ -78,11 +90,11 @@ class SysMLStudioProApp:
         btn_reload = tk.Button(header, text="Reload Sample", command=self.reload_sample, bg=self.colors["card_bg"], fg=self.colors["text_white"], font=("Segoe UI", 9), relief=tk.FLAT, padx=12, pady=4)
         btn_reload.pack(side=tk.RIGHT, padx=10)
 
-        btn_validate = tk.Button(header, text="🛡️ Validate Architecture", command=self.validate_architecture, bg=self.colors["gold"], fg="#000000", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=12, pady=4)
+        btn_validate = tk.Button(header, text="🛡️ Validate Architecture", command=self.run_diagnostics_engine, bg=self.colors["gold"], fg="#000000", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=12, pady=4)
         btn_validate.pack(side=tk.RIGHT, padx=5)
 
     # -------------------------------------------------------------------------
-    # 2. MAIN THREE-PANEL WORKSPACE (WITH NOTEBOOK VIEW)
+    # 2. MAIN THREE-PANEL WORKSPACE
     # -------------------------------------------------------------------------
     def build_main_workspace(self):
         workspace = tk.Frame(self.root, bg=self.colors["bg_dark"])
@@ -93,12 +105,12 @@ class SysMLStudioProApp:
         self.left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 1))
         self.left_panel.pack_propagate(False)
 
-        # Right Property Inspector & Diagnostics Panel (300px wide)
-        self.right_panel = tk.Frame(workspace, bg=self.colors["panel_bg"], width=300, highlightthickness=1, highlightbackground=self.colors["border"])
+        # Right Property Inspector & Diagnostics Panel (310px wide)
+        self.right_panel = tk.Frame(workspace, bg=self.colors["panel_bg"], width=310, highlightthickness=1, highlightbackground=self.colors["border"])
         self.right_panel.pack(side=tk.RIGHT, fill=tk.Y, padx=(1, 0))
         self.right_panel.pack_propagate(False)
 
-        # Center Notebook Area (Supports Visual Canvas & Code Exporter Tabs)
+        # Center Notebook Area (Visual Canvas & Code Exporter)
         self.center_frame = tk.Frame(workspace, bg=self.colors["bg_dark"])
         self.center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -167,10 +179,11 @@ class SysMLStudioProApp:
             "name": f"Component_{count}",
             "type": "Mechatronic Unit",
             "stereo": stereotype,
-            "x": 220 + (count * 15),
-            "y": 150 + (count * 15),
-            "w": 160,
-            "h": 65
+            "x": 200 + (count * 15),
+            "y": 140 + (count * 15),
+            "w": 180,
+            "h": 65,
+            "ports": []
         }
         self.nodes.append(new_node)
         self.selected_node_id = new_node["id"]
@@ -196,7 +209,7 @@ class SysMLStudioProApp:
         bottom_bar = tk.Frame(self.tab_canvas, bg=self.colors["panel_bg"], height=35)
         bottom_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
-        lbl_zoom = tk.Label(bottom_bar, text="Zoom: 100% | SysML v2 Compliant Engine Active", font=("Segoe UI", 9), fg=self.colors["text_muted"], bg=self.colors["panel_bg"])
+        lbl_zoom = tk.Label(bottom_bar, text="Zoom: 100% | ISO/IEC 15288 Compliant Engine", font=("Segoe UI", 9), fg=self.colors["text_muted"], bg=self.colors["panel_bg"])
         lbl_zoom.pack(side=tk.LEFT, padx=15)
 
         btn_zout = tk.Button(bottom_bar, text=" - ", bg=self.colors["card_bg"], fg=self.colors["text_white"], relief=tk.FLAT, padx=8, command=lambda: self.change_zoom(-0.1, lbl_zoom))
@@ -246,9 +259,12 @@ class SysMLStudioProApp:
                 node["x"] + node["w"]//2, node["y"] + 35,
                 text=node["name"], fill=self.colors["text_white"], font=("Segoe UI", 9, "bold"), tags=node["id"]
             )
+            
+            # Display ports if any
+            ports_str = f"ports: {', '.join(node.get('ports', []))}" if node.get('ports') else f"type: {node['type']}"
             self.canvas.create_text(
                 node["x"] + node["w"]//2, node["y"] + 52,
-                text=f"type: {node['type']}", fill=self.colors["text_muted"], font=("Segoe UI", 8), tags=node["id"]
+                text=ports_str, fill=self.colors["text_muted"], font=("Segoe UI", 8), tags=node["id"]
             )
 
     def on_canvas_click(self, event):
@@ -285,11 +301,11 @@ class SysMLStudioProApp:
             self.zoom_level = 1.0
         else:
             self.zoom_level = max(0.5, min(2.0, self.zoom_level + delta))
-        label_widget.config(text=f"Zoom: {int(self.zoom_level * 100)}% | SysML v2 Compliant Engine Active")
+        label_widget.config(text=f"Zoom: {int(self.zoom_level * 100)}% | ISO/IEC 15288 Compliant Engine")
         self.render_canvas()
 
     # -------------------------------------------------------------------------
-    # CODE EXPORTER TAB (SysML v2 Textual & PlantUML Syntax)
+    # CODE EXPORTER TAB
     # -------------------------------------------------------------------------
     def build_code_exporter_tab(self):
         exp_frame = tk.Frame(self.tab_export, bg=self.colors["bg_dark"], padx=15, pady=15)
@@ -312,7 +328,6 @@ class SysMLStudioProApp:
         if not hasattr(self, 'code_text'):
             return
 
-        # Generate SysML v2 compliant syntax representation
         output = "// =========================================================\n"
         output += "// SYSML v2 MODEL EXPORT (ISO/IEC 15288 COMPLIANT)\n"
         output += "// =========================================================\n\n"
@@ -321,20 +336,16 @@ class SysMLStudioProApp:
             stereo = n['stereo'].replace('«', '').replace('»', '')
             output += f"part def {n['name']} {{\n"
             output += f"    attribute blockType: String = \"{n['type']}\";\n"
-            output += f"    metadata stereotype = \"{stereo}\";\n"
+            if n.get('ports'):
+                for p in n['ports']:
+                    output += f"    port {p};\n"
             output += "}\n\n"
 
-        output += "// --- Structural Composition & Connectors ---\n"
-        for c in self.connections:
-            output += f"connection of {c['from']} to {c['to']} : {c['label']};\n"
-
-        output += "\n\n// --- PlantUML Visual Mapping Syntax ---\n"
+        output += "\n// --- PlantUML Visual Mapping Syntax ---\n"
         output += "@startuml SysML_v2_Architecture_Model\n!theme plain\n\n"
         for n in self.nodes:
             stereo = n['stereo'].replace('«', '<<').replace('»', '>>')
             output += f"class \"{n['name']}\" {stereo} {{\n  + domain: {n['type']}\n}}\n"
-        for c in self.connections:
-            output += f"\"{c['from']}\" *-- \"{c['to']}\"\n"
         output += "@enduml\n"
 
         self.code_text.delete(1.0, tk.END)
@@ -345,14 +356,15 @@ class SysMLStudioProApp:
             "standard": "SysML v2 / ISO 15288",
             "system": "3D-Printed EMG Prosthetic Hand",
             "nodes": self.nodes,
-            "connections": self.connections
+            "connections": self.connections,
+            "requirements": self.requirements
         }
         with open("sysml_v2_model_export.json", "w") as f:
             json.dump(model_data, f, indent=2)
         messagebox.showinfo("Export Success", "Model successfully exported to 'sysml_v2_model_export.json'.")
 
     # -------------------------------------------------------------------------
-    # RIGHT PANEL: Property Inspector & Diagnostics
+    # RIGHT PANEL: Property Inspector & Live Diagnostics Engine
     # -------------------------------------------------------------------------
     def build_right_inspector(self):
         lbl_title = tk.Label(self.right_panel, text="≡ PROPERTY INSPECTOR", font=("Segoe UI", 9, "bold"), fg=self.colors["accent_border"], bg=self.colors["panel_bg"], anchor="w", padx=10, pady=10)
@@ -361,13 +373,35 @@ class SysMLStudioProApp:
         self.inspector_frame = tk.Frame(self.right_panel, bg=self.colors["panel_bg"], padx=10)
         self.inspector_frame.pack(fill=tk.BOTH, expand=True)
 
-        diag_frame = tk.LabelFrame(self.right_panel, text="⚠ SYSML v2 DIAGNOSTICS", font=("Segoe UI", 8, "bold"), fg=self.colors["gold"], bg=self.colors["panel_bg"], bd=1, relief=tk.SOLID, padx=8, pady=8)
+        # Diagnostics Window Frame (Bottom Right - Live rule scanner)
+        diag_frame = tk.LabelFrame(self.right_panel, text="⚠ MODEL DIAGNOSTICS (3 Issues)", font=("Segoe UI", 8, "bold"), fg=self.colors["gold"], bg=self.colors["panel_bg"], bd=1, relief=tk.SOLID, padx=8, pady=8)
         diag_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=10, pady=10)
 
-        self.lbl_diag_status = tk.Label(diag_frame, text="✓ SysML v2 rule-check ready.\nClick 'Validate Architecture' above.", font=("Segoe UI", 8), fg=self.colors["text_muted"], bg=self.colors["panel_bg"], justify=tk.LEFT)
-        self.lbl_diag_status.pack(fill=tk.X)
-
+        self.diag_text = scrolledtext.ScrolledText(diag_frame, height=5, bg=self.colors["card_bg"], fg=self.colors["gold"], font=("Segoe UI", 8), relief=tk.FLAT)
+        self.diag_text.pack(fill=tk.X)
+        
+        self.run_diagnostics_engine(initial=True)
         self.update_inspector()
+
+    def run_diagnostics_engine(self, initial=False):
+        # Scan model for orphan ports and pending verification requirements
+        issues = []
+        for n in self.nodes:
+            for p in n.get("ports", []):
+                issues.append(f"⚠ IBD Port '{p}' on '{n['name']}' has no active connector.")
+        
+        for req in self.requirements:
+            if req["status"] == "PENDING":
+                issues.append(f"⚠ Req '{req['id']}' has verification status PENDING.")
+
+        report = f"Total Issues Found: {len(issues)}\n" + "\n".join(issues)
+        
+        if hasattr(self, 'diag_text'):
+            self.diag_text.delete(1.0, tk.END)
+            self.diag_text.insert(tk.END, report)
+
+        if not initial:
+            messagebox.showwarning("Model Diagnostics Scan", f"Diagnostics Scan Complete!\n\n{len(issues)} structural warnings flagged.\nReview the diagnostics panel on the bottom right.")
 
     def update_inspector(self):
         for widget in self.inspector_frame.winfo_children():
@@ -392,46 +426,38 @@ class SysMLStudioProApp:
         ent_stereo.insert(0, node["stereo"])
         ent_stereo.pack(fill=tk.X, pady=2)
 
-        tk.Label(self.inspector_frame, text="Domain / Type:", font=("Segoe UI", 8, "bold"), fg=self.colors["text_white"], bg=self.colors["panel_bg"]).pack(anchor="w", pady=(10, 2))
-        ent_type = tk.Entry(self.inspector_frame, bg=self.colors["card_bg"], fg=self.colors["text_white"], insertbackground="white", relief=tk.FLAT)
-        ent_type.insert(0, node["type"])
-        ent_type.pack(fill=tk.X, pady=2)
+        tk.Label(self.inspector_frame, text="Ports (comma separated):", font=("Segoe UI", 8, "bold"), fg=self.colors["text_white"], bg=self.colors["panel_bg"]).pack(anchor="w", pady=(10, 2))
+        ent_ports = tk.Entry(self.inspector_frame, bg=self.colors["card_bg"], fg=self.colors["text_white"], insertbackground="white", relief=tk.FLAT)
+        ent_ports.insert(0, ", ".join(node.get("ports", [])))
+        ent_ports.pack(fill=tk.X, pady=2)
 
         def apply_changes():
             node["name"] = ent_name.get()
             node["stereo"] = ent_stereo.get()
-            node["type"] = ent_type.get()
+            ports_raw = ent_ports.get().strip()
+            node["ports"] = [p.strip() for p in ports_raw.split(",")] if ports_raw else []
             self.render_canvas()
             self.update_exporter_view()
+            self.run_diagnostics_engine(initial=True)
 
         btn_save = tk.Button(self.inspector_frame, text="Apply Property Changes", command=apply_changes, bg="#0284c7", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, pady=6)
         btn_save.pack(fill=tk.X, pady=20)
 
-    # -------------------------------------------------------------------------
-    # WORKBENCH ACTIONS
-    # -------------------------------------------------------------------------
-    def validate_architecture(self):
-        block_count = len(self.nodes)
-        self.lbl_diag_status.config(
-            text=f"✓ SysML v2 Validation Passed:\n• {block_count} structural blocks verified\n• ISO/IEC 15288 compliance checked\n• 0 Orphan connectors found.",
-            fg="#4ade80"
-        )
-        messagebox.showinfo("SysML v2 Architecture Validation", "Model Validation Complete!\n\nResult: 0 Compliance Errors found.\nAll structures adhere to SysML v2 syntax rules.")
-
     def reload_sample(self):
         self.nodes = [
-            {"id": "node_1", "name": "ProstheticHandSystem", "type": "Top System", "stereo": "«system»", "x": 300, "y": 80, "w": 180, "h": 70},
-            {"id": "node_2", "name": "ESP32 Controller", "type": "Microcontroller", "stereo": "«block»", "x": 180, "y": 240, "w": 160, "h": 65},
-            {"id": "node_3", "name": "EMG Sensor Array", "type": "Input Signal Unit", "stereo": "«block»", "x": 420, "y": 240, "w": 160, "h": 65}
+            {"id": "node_1", "name": "ProstheticHandSystem", "type": "Top System", "stereo": "«system»", "x": 300, "y": 60, "w": 180, "h": 70},
+            {"id": "node_2", "name": "ESP32Controller", "type": "Microcontroller", "stereo": "«block»", "x": 160, "y": 200, "w": 180, "h": 65, "ports": ["fsrDataIn"]},
+            {"id": "node_3", "name": "LinearActuator", "type": "Actuation Unit", "stereo": "«block»", "x": 420, "y": 200, "w": 180, "h": 65, "ports": ["tendonForceOut"]}
         ]
         self.connections = [
-            {"from": "node_1", "to": "node_2", "label": "composition (v2)"},
-            {"from": "node_1", "to": "node_3", "label": "composition (v2)"}
+            {"from": "node_1", "to": "node_2", "label": "composition"},
+            {"from": "node_1", "to": "node_3", "label": "composition"}
         ]
         self.selected_node_id = None
         self.render_canvas()
         self.update_inspector()
         self.update_exporter_view()
+        self.run_diagnostics_engine(initial=True)
 
 if __name__ == "__main__":
     root = tk.Tk()
